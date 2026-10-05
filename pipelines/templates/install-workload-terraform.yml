@@ -1,0 +1,13 @@
+steps:
+  - bash: |
+      set -euo pipefail
+      TERRAFORM_VERSION="1.16.3"
+      INSTALL_DIR=$(mktemp -d)
+      trap 'rm -rf "$INSTALL_DIR"' EXIT
+      curl --fail --location --silent --show-error \
+        --output "$INSTALL_DIR/terraform.zip" \
+        "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+      unzip -q "$INSTALL_DIR/terraform.zip" -d "$INSTALL_DIR"
+      sudo install -m 0755 "$INSTALL_DIR/terraform" /usr/local/bin/terraform
+      terraform version
+    displayName: Install Terraform 1.16.3

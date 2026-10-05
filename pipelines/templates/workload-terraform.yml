@@ -1,0 +1,143 @@
+# Shared by the workload plan and apply jobs; does not alter the platform pipeline.
+parameters:
+  - name: operation
+    type: string
+    values: [plan, apply]
+  - name: applicationName
+    type: string
+  - name: environment
+    type: string
+  - name: runtime
+    type: string
+  - name: resourceType
+    type: string
+
+steps:
+  - template: install-workload-terraform.yml
+
+  - ${{ if eq(parameters.operation, 'apply') }}:
+      - task: DownloadPipelineArtifact@2
+        displayName: Download this run's approved plan
+        inputs:
+          buildType: current
+          artifactName: workload-terraform-plan
+          targetPath: $(Pipeline.Workspace)/workload-terraform-plan
+
+  - task: AzureCLI@2
+    displayName: Terraform ${{ parameters.operation }} with WIF
+    inputs:
+      azureSubscription: sc-public-azure
+      addSpnToEnvironment: true
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+        bash scripts/validate-workload-parameters.sh
+        BACKEND_KEY="workloads/${WORKLOAD_ENVIRONMENT}/${APPLICATION_NAME}.tfstate"
+        TF_DIR="$(Build.SourcesDirectory)/terraform/workloads/app-service"
+        PLAN_DIR="$(Pipeline.Workspace)/workload-terraform-plan"
+
+        # Read once per job. Never rediscover an IP during cleanup.
+        AGENT_IP=$(curl --fail --silent --show-error --retry 3 --max-time 30 https://api.ipify.org)
+        python3 -c 'import ipaddress, sys; ipaddress.IPv4Address(sys.argv[1])' "$AGENT_IP"
+        echo "##vso[task.setvariable variable=WORKLOAD_AGENT_IP]$AGENT_IP"
+        echo '##vso[task.setvariable variable=WORKLOAD_RULE_ADDED]false'
+        IP_RULES=$(az storage account network-rule list \
+          --resource-group rg-terraform-state \
+          --account-name tfstatepublicexample \
+          --query 'ipRules[].ipAddressOrRange' --output tsv)
+        # Azure may return an exact host rule either as an IP or as IP/32.
+        if printf '%s\n' "$IP_RULES" | grep -Fxq -e "$AGENT_IP" -e "$AGENT_IP/32"; then
+          echo 'Agent IP already allowed; preserve the existing rule.'
+        else
+          az storage account network-rule add \
+            --resource-group rg-terraform-state \
+            --account-name tfstatepublicexample --ip-address "$AGENT_IP"
+          echo '##vso[task.setvariable variable=WORKLOAD_RULE_ADDED]true'
+        fi
+
+        export ARM_USE_OIDC=true
+        export ARM_USE_AZUREAD=true
+        export ARM_CLIENT_ID="$servicePrincipalId"
+        export ARM_TENANT_ID="$tenantId"
+        export ARM_SUBSCRIPTION_ID="$(az account show --query id --output tsv)"
+        export ARM_OIDC_TOKEN="$idToken"
+
+        if [[ "$OPERATION" == apply ]]; then
+          # Reject an artifact for another application or provider selection.
+          test "$(cat "$PLAN_DIR/backend-key.txt")" = "$BACKEND_KEY"
+          cmp "$TF_DIR/.terraform.lock.hcl" "$PLAN_DIR/.terraform.lock.hcl"
+          (cd "$PLAN_DIR" && sha256sum --check tfplan.sha256)
+        fi
+
+        for attempt in {1..10}; do
+          echo "Terraform init attempt $attempt of 10..."
+          if terraform -chdir="$TF_DIR" init -input=false -lockfile=readonly \
+            -backend-config="key=$BACKEND_KEY"; then
+            break
+          fi
+          if [[ "$attempt" == 10 ]]; then
+            echo 'Terraform init failed after 10 attempts.' >&2
+            exit 1
+          fi
+          sleep 30
+        done
+        terraform -chdir="$TF_DIR" validate
+
+        if [[ "$OPERATION" == plan ]]; then
+          export TF_VAR_application_name="$APPLICATION_NAME"
+          export TF_VAR_environment="$WORKLOAD_ENVIRONMENT"
+          export TF_VAR_location='South Central US'
+          export TF_VAR_resource_group_name='rg-aidp-example-dev'
+          # Read the existing plan ID; never create or manage the plan here.
+          export TF_VAR_app_service_plan_id
+          TF_VAR_app_service_plan_id=$(az appservice plan show \
+            --resource-group rg-aidp-example-dev --name asp-aidp-example-dev \
+            --query id --output tsv)
+          test -n "$TF_VAR_app_service_plan_id"
+          # Azure can return serverfarms; AzureRM requires the canonical serverFarms segment.
+          TF_VAR_app_service_plan_id=$(printf '%s' "$TF_VAR_app_service_plan_id" | sed 's@/serverfarms/@/serverFarms/@')
+          mkdir -p "$PLAN_DIR"
+          terraform -chdir="$TF_DIR" plan -input=false -lock-timeout=5m -out="$PLAN_DIR/tfplan"
+          cp "$TF_DIR/.terraform.lock.hcl" "$PLAN_DIR/.terraform.lock.hcl"
+          printf '%s\n' "$BACKEND_KEY" > "$PLAN_DIR/backend-key.txt"
+          (cd "$PLAN_DIR" && sha256sum tfplan > tfplan.sha256)
+        else
+          # Apply only the binary plan from this run. Never generate a new plan.
+          terraform -chdir="$TF_DIR" apply -input=false -lock-timeout=5m "$PLAN_DIR/tfplan"
+        fi
+    env:
+      OPERATION: ${{ parameters.operation }}
+      APPLICATION_NAME: ${{ parameters.applicationName }}
+      WORKLOAD_ENVIRONMENT: ${{ parameters.environment }}
+      RUNTIME: ${{ parameters.runtime }}
+      RESOURCE_TYPE: ${{ parameters.resourceType }}
+
+  - task: AzureCLI@2
+    displayName: Remove job-owned backend firewall rule
+    condition: always()
+    inputs:
+      azureSubscription: sc-public-azure
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+        if [[ "$RULE_ADDED" != true ]]; then
+          echo 'This job did not add a rule; nothing to remove.'
+          exit 0
+        fi
+        python3 -c 'import ipaddress, sys; ipaddress.IPv4Address(sys.argv[1])' "$AGENT_IP"
+        az storage account network-rule remove \
+          --resource-group rg-terraform-state \
+          --account-name tfstatepublicexample --ip-address "$AGENT_IP"
+    env:
+      RULE_ADDED: $(WORKLOAD_RULE_ADDED)
+      AGENT_IP: $(WORKLOAD_AGENT_IP)
+
+  - ${{ if eq(parameters.operation, 'plan') }}:
+      - task: PublishPipelineArtifact@1
+        displayName: Publish saved workload plan
+        inputs:
+          targetPath: $(Pipeline.Workspace)/workload-terraform-plan
+          artifact: workload-terraform-plan
+          publishLocation: pipeline

@@ -1,0 +1,372 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  buildConfiguration: Release
+  projectPath: src/Aidp.Api/Aidp.Api.csproj
+
+stages:
+  - stage: Build
+    displayName: Build and publish
+    jobs:
+      - job: BuildApi
+        displayName: Build API
+        pool:
+          vmImage: ubuntu-latest
+
+        steps:
+          - checkout: self
+
+          - task: UseDotNet@2
+            displayName: Install .NET 10 SDK
+            inputs:
+              packageType: sdk
+              version: 10.0.x
+
+          - script: dotnet restore $(projectPath)
+            displayName: Restore dependencies
+
+          - script: dotnet build $(projectPath) --configuration $(buildConfiguration) --no-restore
+            displayName: Build API
+
+          - script: >
+              dotnet publish $(projectPath)
+              --configuration $(buildConfiguration)
+              --no-build
+              --output $(Build.ArtifactStagingDirectory)/aidp-api
+            displayName: Publish API
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish deployment artifact
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/aidp-api
+              artifact: aidp-api
+              publishLocation: pipeline
+
+  - stage: TerraformValidate
+    displayName: Validate Terraform
+    dependsOn: Build
+    condition: succeeded()
+
+    jobs:
+      - job: ValidateTerraform
+        displayName: Validate Terraform configuration
+        pool:
+          vmImage: ubuntu-latest
+
+        steps:
+          - checkout: self
+          - script: |
+              TERRAFORM_VERSION="1.16.3"
+
+              curl --fail --location --silent --show-error \
+                --output /tmp/terraform.zip \
+                "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+
+              unzip -p /tmp/terraform.zip terraform > /tmp/terraform
+              chmod +x /tmp/terraform
+              sudo mv /tmp/terraform /usr/local/bin/terraform
+
+              terraform version
+            displayName: Install Terraform
+
+          - script: terraform fmt -check -recursive
+            displayName: Check Terraform formatting
+            workingDirectory: terraform/environments/dev
+          - script: terraform init -backend=false
+            displayName: Initialize Terraform for validation
+            workingDirectory: terraform/environments/dev
+
+          - script: terraform validate
+            displayName: Validate Terraform
+            workingDirectory: terraform/environments/dev
+
+  - stage: TerraformPlan
+    displayName: Plan Terraform
+    dependsOn: TerraformValidate
+    condition: succeeded()
+
+    jobs:
+      - job: PlanTerraform
+        displayName: Create Terraform plan
+        pool:
+          vmImage: ubuntu-latest
+
+        steps:
+          - checkout: self
+          - script: |
+              TERRAFORM_VERSION="1.16.3"
+
+              curl --fail --location --silent --show-error \
+                --output /tmp/terraform.zip \
+                "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+
+              unzip -p /tmp/terraform.zip terraform > /tmp/terraform
+              chmod +x /tmp/terraform
+              sudo mv /tmp/terraform /usr/local/bin/terraform
+
+              terraform version
+            displayName: Install Terraform
+          - task: AzureCLI@2
+            displayName: Verify Azure WIF authentication
+            inputs:
+              azureSubscription: sc-public-azure
+              addSpnToEnvironment: true
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                echo "Azure authentication succeeded."
+                az account show \
+                  --query "{subscription:name, tenantId:tenantId}" \
+                  --output table
+                AGENT_IP=$(curl --fail --silent --show-error https://api.ipify.org)
+                echo "##vso[task.setvariable variable=TF_AGENT_IP]$AGENT_IP"
+
+                echo "Azure DevOps agent public IP: $AGENT_IP"
+                IP_RULES=$(az storage account network-rule list \
+                  --resource-group rg-terraform-state \
+                  --account-name tfstatepublicexample \
+                  --query 'ipRules[].ipAddressOrRange' \
+                  --output tsv) || exit 1
+
+                if printf '%s\n' "$IP_RULES" | grep -Fxq -- "$AGENT_IP"; then
+                  echo "Agent IP is already allowed; leaving the existing rule untouched."
+                else
+                  echo "Temporarily allowing agent IP on Terraform state storage."
+                  az storage account network-rule add \
+                    --resource-group rg-terraform-state \
+                    --account-name tfstatepublicexample \
+                    --ip-address "$AGENT_IP" || exit 1
+                  echo "##vso[task.setvariable variable=TF_AGENT_RULE_ADDED]true"
+                fi
+                  echo "Initializing Terraform with workload identity federation..."
+
+                  export ARM_USE_OIDC=true
+                  export ARM_USE_AZUREAD=true
+                  export ARM_CLIENT_ID="$servicePrincipalId"
+                  export ARM_TENANT_ID="$tenantId"
+                  export ARM_SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+                  export ARM_OIDC_TOKEN="$idToken"
+
+                  for attempt in {1..10}; do
+                    echo "Terraform init attempt $attempt of 10..."
+                    if terraform -chdir=terraform/environments/dev init -input=false; then
+                      break
+                    fi
+                    if [ "$attempt" -eq 10 ]; then
+                      echo "Terraform init failed after 10 attempts."
+                      exit 1
+                    fi
+                    sleep 30
+                  done
+
+                  echo "Creating Terraform plan..."
+
+                  terraform -chdir=terraform/environments/dev plan \
+                    -input=false \
+                    -out=tfplan
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish Terraform plan
+            inputs:
+              targetPath: terraform/environments/dev/tfplan
+              artifact: terraform-plan
+              publishLocation: pipeline
+
+          - task: AzureCLI@2
+            displayName: Remove temporary backend firewall access
+            condition: always()
+            inputs:
+              azureSubscription: sc-public-azure
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                if [ "${RULE_ADDED:-}" != "true" ]; then
+                  echo "This job did not add a firewall rule; nothing to remove."
+                  exit 0
+                fi
+
+                if ! python3 -c 'import ipaddress, sys; ipaddress.IPv4Address(sys.argv[1])' "${AGENT_IP:-}" 2>/dev/null; then
+                  echo "No valid temporary IPv4 address was recorded; nothing to remove."
+                  exit 0
+                fi
+
+                echo "Removing Azure DevOps agent IP: $AGENT_IP"
+
+                az storage account network-rule remove \
+                  --resource-group rg-terraform-state \
+                  --account-name tfstatepublicexample \
+                  --ip-address "$AGENT_IP"
+            env:
+              RULE_ADDED: $(TF_AGENT_RULE_ADDED)
+              AGENT_IP: $(TF_AGENT_IP)
+
+  - stage: TerraformApply
+    displayName: Apply Terraform
+    dependsOn: TerraformPlan
+    condition: succeeded()
+
+    jobs:
+      - deployment: ApplyTerraform
+        displayName: Apply approved Terraform plan
+        environment: aidp-dev-infra
+        pool:
+          vmImage: ubuntu-latest
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - download: current
+                  artifact: terraform-plan
+
+                - script: |
+                    TERRAFORM_VERSION="1.16.3"
+
+                    curl --fail --location --silent --show-error \
+                      --output /tmp/terraform.zip \
+                      "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+
+                    unzip -p /tmp/terraform.zip terraform > /tmp/terraform
+                    chmod +x /tmp/terraform
+                    sudo mv /tmp/terraform /usr/local/bin/terraform
+
+                    terraform version
+                  displayName: Install Terraform
+                - task: AzureCLI@2
+                  displayName: Prepare Terraform apply authentication
+                  inputs:
+                    azureSubscription: sc-public-azure
+                    addSpnToEnvironment: true
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      echo "Azure WIF authentication succeeded."
+
+                      AGENT_IP=$(curl --fail --silent --show-error https://api.ipify.org)
+                      echo "##vso[task.setvariable variable=TF_APPLY_AGENT_IP]$AGENT_IP"
+
+                      IP_RULES=$(az storage account network-rule list \
+                        --resource-group rg-terraform-state \
+                        --account-name tfstatepublicexample \
+                        --query 'ipRules[].ipAddressOrRange' \
+                        --output tsv) || exit 1
+
+                      if printf '%s\n' "$IP_RULES" | grep -Fxq -- "$AGENT_IP"; then
+                        echo "Apply agent IP is already allowed; leaving the existing rule untouched."
+                      else
+                        echo "Temporarily allowing Apply agent IP: $AGENT_IP"
+                        az storage account network-rule add \
+                          --resource-group rg-terraform-state \
+                          --account-name tfstatepublicexample \
+                          --ip-address "$AGENT_IP" || exit 1
+                        echo "##vso[task.setvariable variable=TF_APPLY_AGENT_RULE_ADDED]true"
+                      fi
+
+                      export ARM_USE_OIDC=true
+                      export ARM_USE_AZUREAD=true
+                      export ARM_CLIENT_ID="$servicePrincipalId"
+                      export ARM_TENANT_ID="$tenantId"
+                      export ARM_SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+                      export ARM_OIDC_TOKEN="$idToken"
+
+                      for attempt in {1..10}; do
+                        echo "Terraform init attempt $attempt of 10..."
+                        if terraform -chdir=terraform/environments/dev init -input=false; then
+                          break
+                        fi
+                        if [ "$attempt" -eq 10 ]; then
+                          echo "Terraform init failed after 10 attempts."
+                          exit 1
+                        fi
+                        sleep 30
+                      done
+                      echo "Applying the approved Terraform plan..."
+
+                      terraform -chdir=terraform/environments/dev apply \
+                        -input=false \
+                        "$(Pipeline.Workspace)/terraform-plan/tfplan"
+
+                - task: AzureCLI@2
+                  displayName: Remove temporary Apply backend firewall access
+                  condition: always()
+                  inputs:
+                    azureSubscription: sc-public-azure
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      if [ "${RULE_ADDED:-}" != "true" ]; then
+                        echo "This job did not add an Apply firewall rule; nothing to remove."
+                        exit 0
+                      fi
+
+                      if ! python3 -c 'import ipaddress, sys; ipaddress.IPv4Address(sys.argv[1])' "${AGENT_IP:-}" 2>/dev/null; then
+                        echo "No valid temporary IPv4 address was recorded; nothing to remove."
+                        exit 0
+                      fi
+
+                      echo "Removing Apply agent IP: $AGENT_IP"
+
+                      az storage account network-rule remove \
+                        --resource-group rg-terraform-state \
+                        --account-name tfstatepublicexample \
+                        --ip-address "$AGENT_IP"
+                  env:
+                    RULE_ADDED: $(TF_APPLY_AGENT_RULE_ADDED)
+                    AGENT_IP: $(TF_APPLY_AGENT_IP)
+
+  - stage: DeployDev
+    displayName: Deploy DEV
+    dependsOn: TerraformApply
+    condition: succeeded()
+
+    jobs:
+      - deployment: DeployApi
+        displayName: Deploy API to DEV
+        environment: aidp-dev
+        pool:
+          vmImage: ubuntu-latest
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: aidp-api
+
+                - task: AzureWebApp@1
+                  displayName: Deploy API to App Service
+                  inputs:
+                    azureSubscription: sc-public-azure
+                    appType: webAppLinux
+                    appName: app-aidp-example-dev
+                    package: $(Pipeline.Workspace)/aidp-api
+                - script: |
+                    echo "Waiting for the application to become ready..."
+
+                    for attempt in {1..12}; do
+                      if curl --fail --silent --show-error \
+                        https://app-aidp-example-dev.example.invalid/health; then
+                        echo
+                        echo "Health check passed."
+                        exit 0
+                      fi
+
+                      echo "Health check attempt $attempt failed. Retrying in 10 seconds..."
+                      sleep 10
+                    done
+
+                    echo "Health check failed after 12 attempts."
+                    exit 1
+                  displayName: Verify application health

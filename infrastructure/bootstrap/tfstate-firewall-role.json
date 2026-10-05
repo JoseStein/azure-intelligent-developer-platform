@@ -1,0 +1,15 @@
+{
+  "Name": "AIDP Terraform State Firewall Manager",
+  "IsCustom": true,
+  "Description": "Allows the AIDP Azure DevOps pipeline to read and update the Terraform backend storage account configuration for temporary firewall access.",
+  "Actions": [
+    "Microsoft.Storage/storageAccounts/read",
+    "Microsoft.Storage/storageAccounts/write"
+  ],
+  "NotActions": [],
+  "DataActions": [],
+  "NotDataActions": [],
+  "AssignableScopes": [
+    "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-terraform-state/providers/Microsoft.Storage/storageAccounts/tfstatepublicexample"
+  ]
+}

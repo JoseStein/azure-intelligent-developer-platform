@@ -1,0 +1,85 @@
+# Manual workload provisioning only. The platform pipeline remains separate.
+trigger: none
+pr: none
+
+parameters:
+  - name: applicationName
+    displayName: Application name (3–30 lowercase characters; aidp is reserved)
+    type: string
+    default: ''
+  - name: environment
+    type: string
+    default: dev
+    values: [dev]
+  - name: runtime
+    type: string
+    default: dotnet10
+    values: [dotnet10]
+  - name: resourceType
+    type: string
+    default: appservice
+    values: [appservice]
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Validate
+    jobs:
+      - job: ValidateWorkload
+        steps:
+          - checkout: self
+          - bash: bash scripts/validate-workload-parameters.sh
+            displayName: Validate workload parameters
+            env:
+              APPLICATION_NAME: ${{ parameters.applicationName }}
+              WORKLOAD_ENVIRONMENT: ${{ parameters.environment }}
+              RUNTIME: ${{ parameters.runtime }}
+              RESOURCE_TYPE: ${{ parameters.resourceType }}
+          - template: pipelines/templates/install-workload-terraform.yml
+          - bash: |
+              set -euo pipefail
+              terraform fmt -check -recursive
+              terraform init -backend=false -input=false -lockfile=readonly
+              terraform validate
+            displayName: Validate workload Terraform
+            workingDirectory: terraform/workloads/app-service
+
+  - stage: TerraformPlan
+    dependsOn: Validate
+    condition: succeeded()
+    jobs:
+      - job: PlanWorkload
+        cancelTimeoutInMinutes: 5
+        steps:
+          - checkout: self
+          - template: pipelines/templates/workload-terraform.yml
+            parameters:
+              operation: plan
+              applicationName: ${{ parameters.applicationName }}
+              environment: ${{ parameters.environment }}
+              runtime: ${{ parameters.runtime }}
+              resourceType: ${{ parameters.resourceType }}
+
+  - stage: TerraformApply
+    dependsOn: TerraformPlan
+    condition: succeeded()
+    jobs:
+      - deployment: ApplyWorkload
+        displayName: Apply approved workload plan
+        # Configure approvals/checks on this environment before enabling execution.
+        environment: aidp-dev-workload
+        cancelTimeoutInMinutes: 5
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - download: none
+                - template: pipelines/templates/workload-terraform.yml
+                  parameters:
+                    operation: apply
+                    applicationName: ${{ parameters.applicationName }}
+                    environment: ${{ parameters.environment }}
+                    runtime: ${{ parameters.runtime }}
+                    resourceType: ${{ parameters.resourceType }}
