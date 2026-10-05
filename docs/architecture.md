@@ -1,379 +1,225 @@
-# Initial Platform Architecture
+# Azure Intelligent Developer Platform Architecture
 
-Status: Planned — platform resources are not yet deployed.
+Status: Implemented portfolio architecture with ongoing hardening and polish.
 
-## Purpose
+AIDP is a secure self-service Azure platform that combines Infrastructure as Code, CI/CD, observability, private networking, identity controls, and safety-bounded AI assistance.
 
-Provide a governed self-service path for deploying an Azure web
-application. Add AI assistance only after the basic platform works.
+## High-level architecture
 
-## First golden path
+```mermaid
+flowchart LR
+    U[Engineer / Developer] --> P[AIDP Portal]
+    P --> E[Microsoft Entra ID]
+    P --> API[AIDP API]
 
-Deploy Azure Web Application, built progressively from:
+    API --> V[Authorization + Deterministic Validation]
+    V --> ADO[Azure DevOps Pipelines]
+    ADO --> TF[Terraform]
+    TF --> AZ[Azure Platform + Workloads]
 
-- Resource group
-- App Service Plan
-- App Service
-- Managed identity with scoped permissions
-- Secure application configuration
-- Monitoring
-- Explicit networking profile
-- Optional storage when needed
-- Relevant Azure Policy controls
+    API --> AI[Microsoft Foundry Assistants]
+    AI --> RAG[Trusted Platform Knowledge / RAG]
+    AI --> MON[Read-only Azure Evidence]
 
-An inexpensive Terraform exercise may precede this golden path.
+    MON --> AM[Azure Monitor]
+    MON --> APPI[Application Insights]
+    MON --> RH[Resource Health]
+    MON --> DM[Deployment Metadata]
 
-## Delivery flow
+    AZ --> NET[Private Link / Private DNS / VNet]
+    AZ --> OBS[Diagnostics / Log Analytics]
 
-Developer
-→ Developer portal
-→ Backend authentication, authorization, and input validation
-→ Azure DevOps pipeline
-→ Terraform plan
-→ Required approval
-→ Terraform apply
-→ Azure resources
-→ Monitoring and deployment status
-
-Azure Policy evaluates applicable resource operations.
-The portal submits approved catalog inputs, not arbitrary Terraform.
-
-## Source and execution
-
-- Azure Repos is the source of truth.
-- Local Git is used to edit, review, and commit changes.
-- Azure DevOps runs deployment pipelines.
-- Microsoft-hosted agents execute pipeline jobs.
-- Paid parallel jobs remain at zero.
-- Terraform remote state will be protected separately from source code.
-
-## Security boundaries
-
-- Authentication identifies the caller.
-- Authorization determines what the caller may request.
-- Backend validation enforces supported catalog configurations.
-- Pipeline controls govern deployment execution and approvals.
-- Deployment identities receive only the permissions they need.
-- Application identities receive scoped access to required resources.
-- Azure Policy enforces applicable governance requirements.
-- Secrets and Terraform state are never committed to Git.
-
-## Networking approach
-
-Introduce networking with the first workloads.
-
-For each resource, document inbound and outbound traffic,
-public/private access, DNS, and service-to-service communication.
-
-Only expose catalog networking profiles that have been implemented
-and verified. Advanced network hardening belongs to Phase 8.
-
-## Future AI extension
-
-Microsoft Foundry will translate natural-language requests into
-proposed structured inputs for the existing validation workflow.
-
-The model will not authorize deployments or receive unrestricted
-Azure deployment permissions.
-
-RAG will retrieve approved platform documentation to explain rules.
-Retrieved content cannot override enforced controls.
-
-A future Platform Intelligence capability will use controlled,
-read-only access to authoritative Azure information to help engineers
-understand the environment. Potential sources include Azure Resource
-Graph, Azure Policy, Azure Monitor, Cost Management, and Microsoft
-Purview where appropriate.
-
-The AI may explain environment state, identify governance or security
-concerns, and recommend actions. It will not receive authority to
-change infrastructure directly. Remediation continues through the
-platform's authorization, validation, approval, Azure DevOps, and
-Terraform workflow.
-
-## Lab constraints
-
-- Personal Azure subscription.
-- Monthly spending target: $20 USD.
-- Actual-cost alert: 80% ($16).
-- Budget alerts do not impose a spending cap.
-- Start with one lab environment and one golden path.
-- Review costs before choosing SKUs or deploying resources.
-- Remove temporary resources after exercises.
-
-## Agreed naming and tagging conventions
-
-Phase 1 decision: agreed by the user; documentation review completed.
-These conventions have not yet been applied to deployed resources.
-
-- Project identifier: `aidp`
-- Initial environment: `dev`
-
-| Tag | Agreed value |
-|---|---|
-| `project` | `aidp-public-platform` |
-| `environment` | `dev` |
-| `owner` | `platform-engineering-lab` |
-| `purpose` | `learning-portfolio` |
-| `managed-by` | `terraform` |
-
-The owner value identifies the lab's responsible group without using
-a personal name. Apply `managed-by = terraform` only to resources
-actually managed by Terraform. Tags are descriptive metadata, not
-access permissions or automatic cleanup controls.
-
-Use resource type, project, environment, and region as the basis for
-resource names. The conceptual pattern is:
-
-```text
-<resource-type>-aidp-dev-<region-code>
+    H[Human Approval] --> ADO
 ```
 
-Adapt separators, length, allowed characters, and any required uniqueness
-suffix to each Azure resource type's naming restrictions. Validate those
-restrictions when implementing the resource.
+## Core platform components
 
-## Agreed Azure region
+### Developer portal
 
-Phase 1 decision: agreed by the user.
+The React/Vite portal provides the user-facing entry point for supported platform operations. Microsoft Entra ID handles authentication, while authorization and request validation remain enforced by the backend.
 
-- Primary lab region: South Central US
-- Region code: `scus`
+### AIDP API
 
-The primary lab region provides a consistent default for resource
-placement and naming. Individual services may use another Azure region
-when required by service, SKU, quota, model, or feature availability.
+The API is the control boundary between user requests, Azure DevOps, Azure services, and AI capabilities. It performs deterministic validation, authorization, request sanitization, trusted evidence collection, and structured AI output validation.
 
-Using the agreed naming convention, the conceptual pattern is now:
+### Azure DevOps and Terraform
 
-```text
-<resource-type>-aidp-dev-scus
-```
+Infrastructure delivery uses Azure DevOps YAML pipelines and Terraform.
 
-Concrete resource names will be selected and validated as resources
-are implemented.
+Key controls include:
 
-## Agreed initial App Service workload
+- separate platform and workload deployment flows;
+- protected Terraform state;
+- Workload Identity Federation instead of long-lived service-connection secrets;
+- environment approvals before infrastructure changes;
+- scoped deployment permissions;
+- plan/apply separation and validation;
+- reusable workload provisioning patterns.
 
-Phase 1 decision: agreed by the user.
+The AI layer does not apply Terraform or approve deployments.
 
-The first golden-path workload will use:
+## Identity and security model
 
-- Azure service: Azure App Service
-- Runtime: .NET 10 LTS
-- Operating system: Linux
-- Default lab App Service Plan SKU: F1 Free
-- Environment: `dev`
-- Region: South Central US (`scus`)
+AIDP separates identity, authorization, infrastructure delivery, and AI advice.
 
-The F1 Free tier is the default for initial learning and development
-because the project is operating under a $20 monthly lab target.
+- Microsoft Entra ID authenticates users.
+- Backend rules determine what operations are allowed.
+- Azure service access uses Managed Identity where applicable.
+- Azure DevOps uses Workload Identity Federation.
+- RBAC follows least-privilege principles.
+- Local/key-based authentication is disabled where supported in the lab architecture.
+- Secrets and Terraform state are excluded from source control.
+- Human approval remains required for infrastructure changes.
 
-F1 is a lab implementation choice, not the proposed production tier.
-When an exercise requires capabilities unavailable on F1, the project
-may temporarily use the lowest appropriate paid tier after reviewing
-its cost and required features. Temporary paid resources should be
-removed or downgraded after the exercise when practical.
+## Networking architecture
 
-Production App Service sizing will remain requirements-driven rather
-than being based on the lab's F1 selection.
+The implemented platform demonstrates private service connectivity using:
 
-## Agreed initial networking profile
+- Azure Virtual Network and dedicated subnets;
+- App Service VNet Integration for outbound private access;
+- Private Endpoints for platform services such as Storage and Microsoft Foundry;
+- Private DNS zones for service-name resolution;
+- default-deny storage network controls;
+- HTTPS and modern TLS enforcement.
 
-Phase 1 decision: agreed by the user.
+The public portfolio repository uses sanitized example names and addresses rather than live environment identifiers.
 
-The initial golden-path networking profile is `public-lab`.
+## Observability architecture
 
-For the first App Service deployment:
+AIDP centralizes operational evidence through:
 
-- Inbound access: public App Service endpoint
-- Outbound access: default App Service outbound connectivity
-- VNet Integration: not enabled initially
-- Private Endpoint: not enabled initially
-- Private DNS: not required initially
+- Azure Monitor;
+- Application Insights;
+- Log Analytics;
+- App Service diagnostic settings;
+- Resource Health;
+- bounded App Service deployment metadata.
 
-This profile provides a simple networking baseline for the first
-Terraform deployment. It is a lab learning configuration, not the
-proposed production networking architecture.
+The platform uses this telemetry both for engineering troubleshooting and as trusted, read-only evidence for AI-assisted health analysis.
 
-Networking will be introduced progressively after the baseline
-deployment works. Later exercises will add and test VNet Integration,
-Private Endpoints, Private DNS, routing, and access restrictions as
-appropriate.
+## AI architecture
 
-The platform should expose only networking profiles that have been
-implemented and verified. Advanced production networking and security
-hardening remain part of Phase 8.
+The AI layer is intentionally capability-bounded.
 
-## Agreed Terraform state storage and access
+Implemented assistants include:
 
-Phase 1 decision: agreed by the user.
+- infrastructure review;
+- deployment troubleshooting;
+- application health analysis.
 
-Terraform will use a remote backend hosted in Azure Blob Storage.
+The assistants can use trusted platform knowledge and approved read-only Azure evidence, but they cannot:
 
-The planned backend architecture is:
+- modify Azure resources;
+- change RBAC;
+- restart or scale workloads;
+- execute Terraform;
+- approve deployments;
+- run arbitrary KQL;
+- choose arbitrary Azure resource IDs.
 
-- Backend type: Azure Storage / Blob Storage
-- State location: private blob container
-- Initial environment state: `aidp-dev.tfstate`
-- Authentication: Microsoft Entra ID
-- Authorization: Azure RBAC
-- Storage account keys: avoid where practical
-- Terraform state files: never committed to Git
+Structured schemas, provenance rules, sanitizers, groundedness checks, adversarial evaluation, and semantic validators are used to reduce unsupported or unsafe output.
 
-The remote backend will provide a shared source of truth for Terraform
-operations performed locally and, later, by Azure DevOps pipelines.
+## Trusted evidence sources
 
-Conceptually:
+AIDP uses a fixed catalog of approved evidence sources, including:
 
-```text
-Local Terraform ───────┐
-                       │
-                       v
-                Azure Blob Storage
-                └── Terraform state
-                       ^
-                       │
-Azure DevOps ──────────┘
+- Azure Monitor metrics;
+- Application Insights summaries;
+- Azure Resource Health;
+- App Service deployment metadata;
+- trusted platform documentation retrieved through RAG.
 
+Evidence provenance is preserved so the platform can distinguish monitored facts, retrieved documentation, and model-generated explanation.
 
-Record decisions as they are made. Distinguish implemented
-lab features from proposed production extensions.
+## Terraform state architecture
 
-## Agreed portal/backend hosting and authentication approach
+Terraform state is stored remotely in Azure Blob Storage and protected separately from application data.
 
-Phase 1 decision: agreed by the user.
+The design uses:
 
-The AIDP portal and backend will follow a local-first development
-approach. The application will be developed and tested locally before
-a permanent Azure hosting service is selected.
+- Microsoft Entra authentication;
+- Azure RBAC;
+- Shared Key disabled where supported;
+- restricted storage-network access;
+- separate state paths for platform and workload deployments;
+- no Terraform state committed to Git.
 
-The initial architecture is:
+The public repository includes only sanitized backend examples and does not contain live state configuration.
 
-- Development approach: local-first
-- Authentication: Microsoft Entra ID
-- Authorization: enforced by backend/platform logic
-- Azure hosting service: deferred until portal/backend implementation
-- AI authorization authority: none
-
-Microsoft Entra ID will identify authenticated users. Authentication
-alone does not grant permission to deploy infrastructure.
-
-The backend will determine which platform operations an authenticated
-user is authorized to request. Supported catalog inputs will also be
-validated deterministically before any deployment workflow is started.
-
-Conceptually:
+## Deployment flow
 
 ```text
-Developer
-    |
-    v
+Engineer
+   |
+   v
 AIDP Portal
-    |
-    v
-Microsoft Entra ID
-    |
-    v
-AIDP Backend
-    |
-    +-- Authentication context
-    +-- Authorization
-    +-- Input validation
-    |
-    v
-Azure DevOps
-    |
-    v
-Terraform
-    |
-    v
-Azure
-
-## Agreed monitoring and retention baseline
-
-Phase 1 decision: agreed by the user.
-
-The initial golden-path workload will include a basic observability
-baseline so deployments can be monitored and troubleshot after they
-are created.
-
-The initial monitoring architecture is:
-
-- Azure Monitor: overall monitoring platform
-- Application Insights: application telemetry
-- Log Analytics Workspace: centralized log and query destination
-- Diagnostic settings: configured for supported and useful resource
-  logs and metrics
-- Initial retention target: 30 days
-- Query language: KQL
-- Infrastructure configuration: managed through Terraform where
-  applicable
-
-The initial architecture is conceptually:
-
-```text
-                    App Service
-                  .NET 10 / Linux
-                        |
-            +-----------+-----------+
-            |                       |
-            v                       v
-   Application Insights      Diagnostic Settings
-            |                       |
-            +-----------+-----------+
-                        |
-                        v
-               Log Analytics Workspace
-                        |
-                   30-day retention
-                        |
-                        v
-                Azure Monitor / KQL
+   |
+   v
+Entra authentication
+   |
+   v
+AIDP API
+   |
+   +-- authorization
+   +-- deterministic validation
+   +-- sanitization
+   |
+   v
+Azure DevOps pipeline
+   |
+   v
+Terraform plan
+   |
+   v
+Human approval
+   |
+   v
+Terraform apply
+   |
+   v
+Azure resources
+   |
+   v
+Monitoring and health evidence
 ```
 
-Monitoring configuration will be implemented progressively. The
-platform will enable telemetry that provides useful operational
-evidence rather than enabling every available diagnostic category
-without a defined purpose.
+## Platform design principles
 
-Initial alerting will remain intentionally small and will focus on
-useful workload signals such as:
+AIDP follows these priorities:
 
-- Application availability or failures
-- HTTP 5xx errors
-- Response time or latency when appropriate
+1. security and least privilege;
+2. deterministic controls before AI judgment;
+3. human approval for infrastructure changes;
+4. trusted and bounded evidence sources;
+5. private connectivity where justified;
+6. centralized observability;
+7. reusable infrastructure patterns;
+8. cost-aware lab design.
 
-Alert thresholds and additional monitoring rules will be selected and
-tested during implementation rather than assumed during architecture
-planning.
+## Current implementation status
 
-The 30-day retention target is intended for the cost-conscious
-development lab. Production retention requirements would be selected
-based on operational, security, compliance, and business requirements.
+Implemented capabilities include:
 
-Monitoring data may later become a controlled read-only evidence
-source for the Platform Intelligence capability. AI-generated
-explanations or recommendations must remain grounded in authorized
-monitoring data and will not grant the AI authority to modify
-infrastructure.
+- Terraform platform infrastructure;
+- workload provisioning pipeline;
+- Entra-authenticated API access;
+- Azure DevOps YAML pipelines;
+- Workload Identity Federation;
+- Managed Identity;
+- private Storage and Foundry connectivity;
+- centralized App Service diagnostics;
+- RAG-backed platform knowledge;
+- AI infrastructure review;
+- AI deployment troubleshooting;
+- live application health analysis;
+- Azure Monitor evidence;
+- Application Insights evidence;
+- Resource Health evidence;
+- deployment metadata evidence;
+- deterministic AI safety and evaluation gates.
 
-## Phase 1 architecture decision status
+Remaining work is focused mainly on additional hardening, observability/cost controls, and recruiter-facing presentation rather than foundational architecture.
 
-The initial Phase 1 architecture decisions documented in this file
-are complete.
+## Public portfolio scope
 
-Agreed decisions include:
-
-- Naming and tagging conventions
-- Primary Azure lab region
-- Initial App Service workload baseline
-- Initial networking profile
-- Terraform remote state architecture
-- Portal/backend hosting and authentication approach
-- Monitoring and retention baseline
-
-Implementation and verification of these decisions will occur
-progressively in later phases. A documented architecture decision
-does not imply that the corresponding Azure resource or capability
-has already been deployed.
+This repository is a sanitized portfolio representation. It intentionally excludes live subscription IDs, tenant IDs, credentials, service connection details, Terraform state, private endpoints, and environment-specific deployment values.
