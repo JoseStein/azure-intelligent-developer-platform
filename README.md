@@ -153,15 +153,57 @@ Current work focuses on additional security hardening, observability, cost contr
 
 ## Running locally
 
-Copy:
-
-```text
-src/Aidp.Portal/.env.example
-```
-
-to `.env.local`, replace the placeholder Entra values with a private test registration, and configure Azure settings outside this repository.
+Copy `src/Aidp.Portal/.env.example` to `.env.local`, replace the placeholder Entra values with values from a private test registration, and configure private Azure settings outside this repository.
 
 Do not commit local environment files, Terraform state, deployment artifacts, or credentials.
+
+## Application Preview
+
+These screenshots show the portfolio application running in a controlled lab environment. They are representative product evidence, not screenshots from a public production environment.
+
+### AI Infrastructure Review
+
+The assistant reviews architecture requests with Microsoft Foundry, deterministic validation, and trusted AIDP platform knowledge. It distinguishes supported platform capabilities from recommendation-only components.
+
+![AI Infrastructure Review](docs/media/ai-infrastructure-review/ai-infrastructure-review-03.png)
+
+*Structured infrastructure guidance with platform-aware recommendations.*
+
+Additional captures are in [`docs/media/ai-infrastructure-review`](docs/media/ai-infrastructure-review/).
+
+### AI Deployment Troubleshooting
+
+The assistant analyzes supplied pipeline and Terraform evidence, classifies likely failures, shows supporting evidence and confidence, and recommends investigation without performing remediation or rerunning deployments.
+
+![AI Deployment Troubleshooting](docs/media/ai-deployment-troubleshooting/ai-deployment-troubleshooting-02.png)
+
+*Evidence-based troubleshooting remains advisory and read-only.*
+
+Additional captures are in [`docs/media/ai-deployment-troubleshooting`](docs/media/ai-deployment-troubleshooting/).
+
+### AI Application Health
+
+AIDP supports both supplied-evidence analysis and live read-only Azure analysis using Azure Monitor, Application Insights, Resource Health, and deployment metadata.
+
+The live-health capture intentionally demonstrates evidence-aware behavior: Azure Monitor reported no active request traffic or HTTP 5xx errors in the observed window, response-time samples were unavailable, Application Insights data was insufficient, and Resource Health reported the web app running normally. AIDP correctly returned **UNKNOWN** health with **LOW** overall confidence instead of inventing a root cause.
+
+![AI Application Health](docs/media/ai-application-health/ai-application-health-04.png)
+
+*Conservative health assessment when telemetry is incomplete.*
+
+Additional captures are in [`docs/media/ai-application-health`](docs/media/ai-application-health/).
+
+### Trusted Platform Knowledge / RAG
+
+Infrastructure reviews retrieve approved AIDP knowledge and distinguish trusted platform guidance from model inference.
+
+The captured Managed Identity example recommends a system-assigned Managed Identity for App Service, Azure RBAC for Blob Storage access, avoiding storage account keys and other long-lived shared credentials, and least-privilege scope.
+
+![Trusted Platform Knowledge](docs/media/rag/rag-02.png)
+
+*Trusted platform guidance grounds the assistant’s recommendations.*
+
+Additional captures are in [`docs/media/rag`](docs/media/rag/).
 
 ## Author
 
