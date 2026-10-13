@@ -21,6 +21,14 @@ Modern platform teams are expected to make cloud delivery faster without giving 
 - trusted RAG and provenance-aware evidence;
 - deterministic evaluation and AI safety gates.
 
+## How AIDP works
+
+1. A developer submits an infrastructure request or asks for operational help through the AIDP portal.
+2. AIDP validates the request and uses AI for analysis and recommendations, not autonomous infrastructure changes.
+3. Trusted RAG and bounded read-only Azure telemetry ground the AI response with platform knowledge and live evidence.
+4. Infrastructure changes flow through Azure DevOps and Terraform with deterministic controls and human approval.
+5. The AI cannot deploy infrastructure, change RBAC, restart resources, approve releases, or execute Terraform on its own.
+
 ## What the platform can do
 
 AIDP supports a controlled developer workflow where an authenticated user can request supported infrastructure, have the request validated, and route deployment through Azure DevOps and Terraform with human approval.
