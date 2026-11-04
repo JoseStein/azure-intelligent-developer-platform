@@ -1,6 +1,6 @@
 # Temporary AKS pipeline design
 
-`azure-pipelines-aks.yml` is a separate, manual-only pipeline for the temporary `terraform/environments/aks-lab/` root.
+`azure-pipelines-aks.yml` is a preserved, manual-only pipeline **design** for the temporary `terraform/environments/aks-lab/` root. **It is not currently runnable:** the dedicated Azure Terraform backend and original AIDP resources were deleted on November 4, 2026. To reuse it, an engineer must rebuild and verify the backend, service connection, state isolation, RBAC, firewall access and environment approvals, then assess current costs. The Validate stage passed during the lab; the Plan stage encountered a remote-state firewall HTTP 403, and no AKS apply or destroy ran.
 
 ## Safety boundaries
 
