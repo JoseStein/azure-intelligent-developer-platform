@@ -1,10 +1,45 @@
-# Azure Intelligent Developer Platform (AIDP)
+<div align="center">
 
-AIDP is a secure self-service Azure platform that combines **Infrastructure as Code, CI/CD, private networking, observability, and safety-bounded AI assistants**.
+# ☁️ Azure Intelligent Developer Platform
 
-It was built as a hands-on Cloud / DevOps / Platform Engineering project to demonstrate how Azure infrastructure delivery and AI-assisted operations can be designed with strong security boundaries, least privilege, and human approval.
+### Cloud Engineering · DevOps · Platform Engineering · Applied AI
 
-> **Portfolio note:** this repository is a sanitized public representation. It contains no live subscription identifiers, credentials, Terraform state, private endpoints, or environment-specific secrets.
+**An end-to-end engineering portfolio covering Terraform infrastructure, governed Azure delivery, AI-assisted operations, local Kubernetes troubleshooting, and safe cloud decommissioning.**
+
+[**Explore the Kubernetes case study**](docs/kubernetes/README.md) · [**View the project architecture**](docs/architecture-overview.md) · [**Read the teardown incident report**](docs/kubernetes/azure-cleanup-runbook.md)
+
+![Azure](https://img.shields.io/badge/Azure-Platform-0078D4?logo=microsoftazure&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-IaC-844FBA?logo=terraform&logoColor=white)
+![Azure DevOps](https://img.shields.io/badge/Azure_DevOps-CI%2FCD-0078D7?logo=azuredevops&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-Local_Labs-326CE5?logo=kubernetes&logoColor=white)
+![Dotnet](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
+
+</div>
+
+> [!IMPORTANT]
+> **Project status (November 2026):** The Azure lab was intentionally **decommissioned** after validation and evidence capture. Kubernetes was operated **locally on Docker Desktop**. AKS/ACR were **designed but never deployed**. This is a portfolio and reproducible engineering reference, **not a live hosted service**.
+
+## Start here
+
+| 👔 For recruiters and hiring managers | 🛠️ For engineers and reviewers |
+| --- | --- |
+| **[One-page project case study](docs/kubernetes/portfolio-summary.md)** — responsibilities, delivered work, technical results, résumé-ready highlights | **[Kubernetes operations](docs/kubernetes/local-deployment.md)** — deployment, namespace, probes, resources, validation |
+| **[Hands-on troubleshooting](docs/kubernetes/troubleshooting-guide.md)** — actual failure drills and recovery | **[AKS architecture](docs/kubernetes/aks-architecture.md)** — Terraform/identity/networking design; not deployed |
+| **[Architecture overview](docs/architecture-overview.md)** — why the platform was built | **[Azure cleanup record](docs/kubernetes/azure-cleanup-runbook.md)** — real Terraform destroy failures and resolution |
+
+## Delivery at a glance
+
+| Scope | Verified outcome | Status |
+| --- | --- | --- |
+| Azure App Service-era AIDP lab | Terraform infrastructure, CI/CD patterns, private networking and observability represented in this sanitized repository | **Implemented during lab · now retired** |
+| Docker + Kubernetes | Containerized .NET API, probes, ConfigMap, internal Service, scaling, rollouts, rollback | **Hands-on locally** |
+| Kubernetes failure response | Reproduced image-pull failure, bad readiness path, crash loops; diagnosed and recovered | **Hands-on locally** |
+| Azure Kubernetes Service | Terraform architecture and approval-gated pipeline; validation succeeded, Plan was blocked by remote-state HTTP 403 | **Designed only · no live AKS** |
+| Azure teardown | Workload/platform Terraform destruction, orphan monitoring-resource investigation, secure remote-state backup, final empty AIDP-named resource inventory | **Completed November 4, 2026** |
+
+## Architecture: controlled infrastructure delivery
+
+The platform separated **AI recommendations** from **infrastructure authority**. Azure DevOps/Terraform and human approvals remained responsible for changes, while AI assistants analyzed bounded, read-only evidence.
 
 ## Why this project matters
 
@@ -141,35 +176,13 @@ docs/                      Architecture, security, operations, and AI safety doc
 
 **Application stack:** .NET, React, Vite, MSAL
 
-## Current project status — lab decommissioned
-
-**As of November 4, 2026, the temporary AIDP Azure environment has been decommissioned.** The infrastructure and application demonstrations described below were completed during the former lab; they are not currently hosted Azure services. The application and workload resource groups and the Terraform backend account were deleted after private state backup. An Azure CLI inventory returned no AIDP-named resources; final billing settlement is not yet verified.
-
-**New: [Kubernetes, Terraform and Azure teardown case study](docs/kubernetes/README.md)** — local Kubernetes deployment, scaling, failure drills, rollbacks, AKS/ACR migration design (**not deployed**), Azure DevOps pipeline design, and the completed Azure infrastructure teardown.
-
-The former lab implemented capabilities including:
-
-- Terraform-based Azure infrastructure;
-- platform and workload CI/CD flows;
-- Entra authentication;
-- self-service workload provisioning;
-- AI infrastructure review;
-- deployment troubleshooting;
-- health analysis;
-- trusted RAG;
-- live Azure telemetry evidence;
-- AI safety/evaluation gates;
-- diagnostic settings and private networking controls.
-
-The preserved repository is now a portfolio and reproducible reference; it does not imply that the retired Azure resources or AI endpoints are currently available. The AKS cluster and ACR were planned but **never provisioned**.
-
 ## Running locally
 
 Copy `src/Aidp.Portal/.env.example` to `.env.local`, replace the placeholder Entra values with values from a private test registration, and configure private Azure settings outside this repository.
 
 Do not commit local environment files, Terraform state, deployment artifacts, or credentials.
 
-## Application Preview
+## Application preview — historical lab screenshots
 
 These screenshots show the portfolio application running in a controlled lab environment. They are representative product evidence, not screenshots from a public production environment.
 
@@ -217,7 +230,8 @@ The captured Managed Identity example recommends a system-assigned Managed Ident
 
 Additional captures are in [`docs/media/rag`](docs/media/rag/).
 
-## Author
+## About this project
 
-**Andres Stein**  
-Cloud / DevOps / Platform Engineer
+**Andres Stein** · Cloud / DevOps / Platform Engineer
+
+**Portfolio disclaimer:** examples are sanitized. No live Azure service or production AKS is claimed. Terraform state backups stay private. Azure resource inventory showed no remaining AIDP-named resources; billing settlement was not independently verified.
