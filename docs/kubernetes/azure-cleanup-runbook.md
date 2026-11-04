@@ -1,34 +1,58 @@
-# Azure lab cleanup runbook
+# Azure lab decommissioning — completed execution record
 
-This is a planning document. It does not confirm that the environment is empty and must not be used without reviewing live Terraform state and Azure inventory.
+**Status:** AIDP Azure teardown completed November 4, 2026. This is an operational record, not a proposed deletion sequence.
 
-## Ownership boundaries
+## Objective
 
-1. Temporary AKS resources belong to `terraform/environments/aks-lab/` and state key `aks-lab/dev.tfstate`.
-2. Platform resources belong to `terraform/environments/dev/` and state key `aidp-dev.tfstate`.
-3. Workload resources belong to their workload state.
-4. Terraform backend storage is shared infrastructure and must be handled last.
+Retire the temporary Azure Intelligent Developer Platform (AIDP) lab after local Kubernetes learning and AKS architecture planning, eliminating ongoing infrastructure usage while retaining Terraform, pipeline definitions, Kubernetes manifests, troubleshooting documentation, and private backups.
 
-## Planned order
+**AKS was never deployed.** There was no AKS cluster, ACR instance, managed `MC_*` group, or live migration to destroy.
 
-1. Stop application workloads and capture evidence.
-2. Destroy the temporary AKS stack through its reviewed state only.
-3. Verify the AKS-managed `MC_*` resource group, VMSS, disks, load balancer, public IPs, NICs, and ACR are gone.
-4. Confirm no App Service traffic, deployment, or portal dependency remains.
-5. Through the owning platform state, review and remove App Services and App Service Plans.
-6. Review and remove Foundry and model deployments after confirming no other workload depends on them.
-7. Review and remove Azure AI Search and its indexes.
-8. Review and remove application Storage, private endpoints, private DNS links, and lab networking only after dependency checks.
-9. Remove Application Insights and Log Analytics after exporting required evidence and checking diagnostic-setting dependencies.
-10. Verify Cost Management shows no continuing lab charges.
-11. Preserve and back up Terraform state and documentation.
-12. Handle the Terraform backend storage account last; never delete it before state retention is no longer required.
+## Terraform ownership and scope
 
-## Safety checks
+| Component | Terraform ownership / Azure resource group | Outcome |
+| --- | --- | --- |
+| Inventory API | `terraform/workloads/app-service/`, state `workloads/dev/inventory-api.tfstate` | Destroyed |
+| Shared AIDP platform | `terraform/environments/dev/`, state `aidp-dev.tfstate`, group `rg-aidp-dev-scus` | Destroyed |
+| Proposed AKS | `terraform/environments/aks-lab/`, proposed state `aks-lab/dev.tfstate` | Design only, never deployed |
+| State backend | `staidptfstatescus` in `rg-aidp-tfstate-scus`, container `tfstate` | Five state blobs backed up privately; backend deleted last |
 
-- Review each state’s plan before destroy.
-- Confirm shared resources are not owned by the state being destroyed.
-- Check private endpoint and DNS dependencies before deleting networking.
-- Check diagnostic settings before deleting monitoring resources.
-- Search for leftover public IPs, disks, registries, plans, and managed resource groups.
-- Record the final resource inventory and Cost Management result.
+Unrelated resource groups, other projects, and shared subscriptions were outside the deletion scope.
+
+## Execution timeline and evidence
+
+1. **Inventory and dependency checks.** Reviewed Terraform state addresses, Azure resource listings, resource-group locks, and backend ownership. Saved evidence and decided not to keep the lab running.
+2. **Workload destruction.** Reviewed saved plan (`0 add, 0 change, 3 destroy`); applied successfully (**3 destroyed**).
+3. **Platform destruction.** Reviewed a saved plan with **35 resources to destroy**; most were deleted, but the operation ended while purging the Foundry cognitive account, reporting a reset connection.
+4. **Reconcile partial apply.** Azure queries showed no active or listed soft-deleted Foundry account. A new Terraform plan showed only one remaining deletion: the platform resource group.
+5. **Diagnose the resource-group blocker.** Terraform's `prevent_deletion_if_contains_resources` protection rejected removing the group while the unmanaged `Application Insights Smart Detection` action group remained.
+6. **Remediate safely.** Verified that action group's exact resource ID and that it was the group's sole remaining resource. Deleted it individually with `az monitor action-group delete` (without `--yes`, which this CLI version did not support).
+7. **Complete platform destroy.** Created and reviewed a **fresh saved** one-resource Terraform destroy plan. Applied it. `az group exists --name rg-aidp-dev-scus` returned `false`.
+8. **Retain backend until last.** Confirmed `rg-aidp-tfstate-scus` contained only `staidptfstatescus`. Listed five AIDP state blobs, downloaded them to a private Mac directory, and confirmed five nonempty backups.
+9. **Delete backend.** Deleted `staidptfstatescus`, verified its resource group was empty, then deleted `rg-aidp-tfstate-scus`. Azure returned `false` for its existence check.
+10. **Final inventory.** A name-based Azure CLI resource query (resource name or resource group containing `aidp`) returned no results.
+
+## Operational lessons
+
+- **Terraform is not a transaction.** A failed final purge did not undo previously deleted resources. Read Azure's actual inventory and refresh state before retrying.
+- **Preserve safety guards.** The resource-group protection discovered an unmanaged monitoring action group; disabling the guard would have hidden the dependency.
+- **Replan after drift or partial operations.** Inspect the exact delete addresses and apply a fresh saved plan, not a stale one.
+- **Treat state as sensitive.** Terraform state may contain credentials and metadata. Back up privately; do not publish `.tfstate` or saved plans.
+- **Delete backends last.** Keep remote state available until every root has completed its destroy and the state files are accounted for.
+
+## Read-only verification commands
+
+```bash
+az group exists --name rg-aidp-dev-scus
+az group exists --name rg-aidp-tfstate-scus
+
+az resource list \
+  --query "[?contains(name, 'aidp') || contains(resourceGroup, 'aidp')].{name:name,resourceGroup:resourceGroup,type:type}" \
+  --output table
+```
+
+Observed final output: `false`, `false`, and no rows in the AIDP-named resource listing.
+
+## Scope, cost, and recovery
+
+This verifies **the resource groups and name-based inventory**, not every resource in the subscription. Cost Management entries can post after deletion; no independently confirmed final $0 invoice is claimed. Existing App Services and other AIDP platform infrastructure were retired **without an AKS migration**. The Terraform backend no longer exists; rebuilding requires a new backend, new Azure infrastructure, valid service connections and access, and a fresh cost assessment. Preserve private state backups securely and never commit them to GitHub.
