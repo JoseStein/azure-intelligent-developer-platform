@@ -1,6 +1,6 @@
 # Planned AKS architecture
 
-This is a design artifact, not evidence of a deployed AKS environment.
+This is an **archived design artifact**, not evidence of a deployed AKS environment. The referenced App Service-era VNet, private endpoints, Foundry account, Search service, storage, and Terraform backend were decommissioned in November 2026. A fresh implementation requires recreating and reviewing these dependencies; the network details below are historical planned values.
 
 ```mermaid
 flowchart LR
