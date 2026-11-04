@@ -1,65 +1,64 @@
-# Portfolio summary
+# AIDP engineering case study
 
-## Project overview
+### Azure · Terraform · Azure DevOps · Kubernetes · Production-style troubleshooting
 
-The AIDP Kubernetes learning track demonstrates how an existing .NET API can be containerized, run locally on Kubernetes, and prepared for a controlled Azure migration without overstating cloud deployment results.
+[← Project home](../../README.md) · [Kubernetes overview](README.md) · [Azure teardown report](azure-cleanup-runbook.md)
 
-## Implemented and tested
+## The opportunity
 
-- Multi-stage .NET 10 Docker image.
-- Local Docker execution with a healthy `/health` endpoint.
-- Docker Desktop Kubernetes Deployment and ClusterIP Service.
-- Namespace migration from `default` to `aidp-dev`.
-- ConfigMap-based environment configuration.
-- CPU and memory requests/limits.
-- Readiness and liveness probes.
-- Scaling from one to two replicas.
-- Rolling update and rollback using image tags.
-- Diagnosis and recovery of ImagePullBackOff, readiness-probe failure, and CrashLoopBackOff.
-- Troubleshooting documentation based on observed local behavior.
+**Problem:** How do you build a governed Azure self-service developer platform, explore moving a .NET API from App Service toward Kubernetes, and demonstrate the full cloud lifecycle without paying indefinitely for a training environment?
 
-## Implemented and locally validated, not deployed to Azure
+**My role:** Cloud / DevOps engineer responsible for infrastructure design, Terraform changes, pipeline controls, hands-on Kubernetes operations, troubleshooting, resource verification, and teardown. Code assistance was used for repository tasks; documented infrastructure operations and engineering decisions are the focus here.
 
-- Temporary AKS Terraform root.
-- AzureRM provider lock at 4.81.0.
-- Azure CNI Overlay configuration.
-- ACR, AKS, identity, OIDC federation, and scoped RBAC resource definitions.
-- Manual-only Azure DevOps pipeline design.
+**Outcome:** Built and troubleshot the API in **local Kubernetes**, prepared and validated an **AKS migration design**, and **removed all identified AIDP-named Azure resources** after saving private Terraform state backups. AKS was **not deployed**.
 
-The AKS Validate stage passed. Terraform Plan did not complete because the Microsoft-hosted agent could not reach the firewall-restricted remote state account and received HTTP 403.
+## Three engineering stories
 
-## AKS migration tasks not executed
+| Engineering challenge | What I did | What it demonstrates |
+| --- | --- | --- |
+| **01 · Operate containers** | Built a multi-stage .NET 10 Docker image, deployed it to Docker Desktop Kubernetes with ConfigMap, Service, probes, CPU/memory controls, and two-replica scaling | Containers, Kubernetes primitives, release operations |
+| **02 · Diagnose failure** | Intentionally triggered ImagePullBackOff, readiness HTTP 404, and CrashLoopBackOff; used `kubectl describe`, events, logs, endpoints, and rollout undo to recover | Root-cause analysis, healthy traffic routing, rollback |
+| **03 · Decommission responsibly** | Reviewed state-scoped Terraform destroy plans; reconciled a failed Foundry purge; isolated and deleted an unmanaged monitoring action group; backed up state and retired its storage account | Change control, state ownership, Azure CLI, cost management discipline |
 
-- Provisioning AKS or ACR.
-- Pushing an image to ACR.
-- Deploying the API to AKS.
-- Verifying Workload Identity against Azure services.
-- Migrating traffic from App Service.
-- Destroying App Service compute *as part of a migration* (the legacy lab infrastructure was instead destroyed in a separate, completed teardown).
+## Technical results and evidence
 
-## Accurate resume bullets
+| Category | Verified result | Reference |
+| --- | --- | --- |
+| Container | `GET /health` returned HTTP 200 | [Local deployment](local-deployment.md) |
+| Kubernetes | `aidp-dev` namespace, Deployment, Service, ConfigMap, probes, scaling, rolling updates and rollback | [Local deployment](local-deployment.md) |
+| Reliability | Reproduced and recovered from three failure types | [Troubleshooting guide](troubleshooting-guide.md) |
+| AKS architecture | Terraform root, network/IP design, ACR, OIDC federation and identity/RBAC plan locally validated | [AKS design](aks-architecture.md) |
+| Azure DevOps | Manual-only pipeline definition, Validate passed; Plan blocked by backend HTTP 403 | [Pipeline design](aks-pipeline-design.md) |
+| Azure cleanup | Workload destroy: **3**; initial platform plan: **35** targets; backed up **5** state blobs; final AIDP-named resource search empty | [Teardown record](azure-cleanup-runbook.md) |
 
-- Containerized a .NET 10 API with a multi-stage Docker build and validated health behavior locally.
-- Deployed and operated the API on Docker Desktop Kubernetes using namespaces, ConfigMaps, Services, probes, resource limits, scaling, rollouts, and rollback.
-- Built and validated a separate Terraform AKS foundation with isolated state design, Azure CNI Overlay, OIDC federation, and least-privilege identity planning.
-- Authored Azure DevOps pipeline controls for manual Terraform validation, plan, approval-gated apply, and reviewed destroy workflows.
-- Documented realistic Kubernetes failure modes and recovery procedures using observed local lab results.
+## Example real-world incident: Terraform resource-group deletion blocked
 
+**Symptom:** Terraform reported that a resource group could not be deleted because it contained a resource not managed by the current state.
 
-## Completed: safe Azure lab decommissioning (November 4, 2026)
+**Investigation:** Azure inventory showed the remaining `Application Insights Smart Detection` action group, automatically created by Azure. The AzureRM provider's safeguard correctly stopped deletion.
 
-After deciding not to provision AKS, I retired the existing AIDP lab instead of leaving paid Azure resources running.
+**Resolution:** I verified the action group's scope, deleted that lab-only resource explicitly, generated and inspected a **new saved Terraform destroy plan**, applied the new plan, and confirmed the resource group no longer existed.
 
-- Reviewed and applied the Inventory API workload's Terraform destroy plan: **3 resources destroyed**.
-- Reviewed the main platform's Terraform destroy plan: **35 resources targeted**. A Foundry purge connection error caused partial completion, so I compared Azure inventory with refreshed Terraform state instead of blindly retrying.
-- Terraform subsequently blocked the resource-group deletion because an unmanaged **Application Insights Smart Detection** action group remained. I verified its exact identity, deleted only this lab resource, generated a new saved plan, and removed the now-empty platform group.
-- Kept the remote Terraform state backend until the end; verified its five state blobs and saved private copies on my Mac. Deleted the storage account and backend group after dependency and ownership checks.
-- Verified both AIDP resource groups were absent and an Azure CLI query returned **zero AIDP-named resources**.
+**Lesson:** Do not disable infrastructure safeguards just to make a deployment succeed. Determine ownership, reconcile real cloud state, and apply the smallest reviewed change.
 
-**Scope clarification:** This is a completed Azure teardown, **not** a completed App Service-to-AKS migration. AKS/ACR were never provisioned. The resource inventory does not establish a settled $0 invoice; Azure Cost Management may lag. Sensitive state backups remain private and must not be committed.
+## Deliberate limits
 
-See [Azure cleanup record](azure-cleanup-runbook.md).
+- **Local Kubernetes:** completed hands-on.
+- **AKS/ACR cloud deployment:** **never provisioned**. The Azure DevOps Validate stage passed, but the Plan stage encountered a firewall-restricted Terraform state backend HTTP 403. No application cutover occurred.
+- **Original App Services:** deleted afterward as part of the **lab teardown**, not as the result of a Kubernetes migration.
+- **Costs:** resource-group existence checks returned `false`, and a name-based inventory found no AIDP-named resources. This is **not** a confirmation that a final Azure bill has settled at $0.
+- **Sensitive files:** private Terraform state backups were **not published**.
 
-## Additional résumé bullet
+## Interview and résumé talking points
 
-- Executed a controlled, cost-conscious Azure lab teardown using separate Terraform states, reviewed saved plans, Azure CLI verification, and secure remote-state backup; resolved partial Foundry deletion and unmanaged monitoring-resource blockers.
+> **Kubernetes operations:** Containerized a .NET 10 API and ran it in a local Kubernetes cluster, including ConfigMaps, readiness/liveness checks, scaling, Service routing, rolling updates, and rollback.
+
+> **Troubleshooting:** Reproduced and resolved ImagePullBackOff, unhealthy readiness probes, and CrashLoopBackOff using Pod events, container logs, endpoints, and controlled rollbacks.
+
+> **Infrastructure as Code:** Designed and locally validated an AKS/ACR Terraform architecture with Azure CNI Overlay, Workload Identity federation, and explicit deployment controls; identified a remote-state network blocker before any cloud cluster deployment.
+
+> **Azure lifecycle:** Completed a state-aware Azure lab teardown, reconciled a partially completed Terraform destroy, resolved an unmanaged monitoring dependency, and removed the remote-state backend only after private backups and verification.
+
+---
+
+**Further reading:** [Full Kubernetes portfolio](README.md) · [Architecture overview](../../docs/architecture-overview.md) · [Azure incident / cleanup report](azure-cleanup-runbook.md)
