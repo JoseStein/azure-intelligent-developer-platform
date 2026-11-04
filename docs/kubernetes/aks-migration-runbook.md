@@ -1,6 +1,6 @@
 # AKS migration runbook — design only
 
-This runbook describes the remaining work. It was not executed.
+This is an **archived design-only** runbook. No AKS deployment or App Service-to-AKS migration occurred. After choosing to end the lab, the existing AIDP App Services and backend were separately **decommissioned on November 4, 2026**; they no longer exist. The steps below are hypothetical and require rebuilding the infrastructure and updating prerequisites before use. See [the completed cleanup record](azure-cleanup-runbook.md).
 
 ## Preconditions
 
