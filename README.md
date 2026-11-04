@@ -141,9 +141,13 @@ docs/                      Architecture, security, operations, and AI safety doc
 
 **Application stack:** .NET, React, Vite, MSAL
 
-## Current project status
+## Current project status — lab decommissioned
 
-Core platform capabilities are implemented in the private lab environment and represented here in sanitized form, including:
+**As of November 4, 2026, the temporary AIDP Azure environment has been decommissioned.** The infrastructure and application demonstrations described below were completed during the former lab; they are not currently hosted Azure services. The application and workload resource groups and the Terraform backend account were deleted after private state backup. An Azure CLI inventory returned no AIDP-named resources; final billing settlement is not yet verified.
+
+**New: [Kubernetes, Terraform and Azure teardown case study](docs/kubernetes/README.md)** — local Kubernetes deployment, scaling, failure drills, rollbacks, AKS/ACR migration design (**not deployed**), Azure DevOps pipeline design, and the completed Azure infrastructure teardown.
+
+The former lab implemented capabilities including:
 
 - Terraform-based Azure infrastructure;
 - platform and workload CI/CD flows;
@@ -157,7 +161,7 @@ Core platform capabilities are implemented in the private lab environment and re
 - AI safety/evaluation gates;
 - diagnostic settings and private networking controls.
 
-Current work focuses on additional security hardening, observability, cost controls, and portfolio polish.
+The preserved repository is now a portfolio and reproducible reference; it does not imply that the retired Azure resources or AI endpoints are currently available. The AKS cluster and ACR were planned but **never provisioned**.
 
 ## Running locally
 
